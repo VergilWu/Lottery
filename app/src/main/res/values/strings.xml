@@ -1,0 +1,139 @@
+<resources>
+    <!-- App Name -->
+    <string name="app_name">彩票工具</string>
+    
+    <!-- Bottom Navigation -->
+    <string name="nav_home">首页</string>
+    <string name="nav_analysis">分析</string>
+    <string name="nav_prediction">预测</string>
+    <string name="nav_profile">我的</string>
+    
+    <!-- Lottery Types -->
+    <string name="lottery_ssq">双色球</string>
+    <string name="lottery_qlc">七乐彩</string>
+    <string name="lottery_fc3d">福彩3D</string>
+    <string name="lottery_cjdlt">超级大乐透</string>
+    <string name="lottery_qxc">七星彩</string>
+    <string name="lottery_pl3">排列3</string>
+    <string name="lottery_pl5">排列5</string>
+    <string name="lottery_kl8">快乐8</string>
+    
+    <!-- Home Screen -->
+    <string name="screen_home_title">开奖查询</string>
+    <string name="home_latest_draw">最新开奖</string>
+    <string name="home_select_lottery">选择彩种</string>
+    <string name="home_draw_number">第 %s 期</string>
+    <string name="home_draw_date">开奖日期：%s</string>
+    <string name="home_verify_numbers">验证号码</string>
+    <string name="home_input_numbers">请输入号码</string>
+    <string name="home_check_result">查看结果</string>
+    
+    <!-- Analysis Screen -->
+    <string name="screen_analysis_title">数据分析</string>
+    <string name="analysis_select_dimension">选择分析维度</string>
+    <string name="analysis_red_ball">红球</string>
+    <string name="analysis_blue_ball">蓝球</string>
+    
+    <!-- Analysis Dimensions -->
+    <string name="analysis_history">历史记录</string>
+    <string name="analysis_omission">遗漏分析</string>
+    <string name="analysis_frequency">频率分析</string>
+    <string name="analysis_hot_cold">冷热号</string>
+    <string name="analysis_consecutive">连号分析</string>
+    <string name="analysis_same_tail">同尾号</string>
+    <string name="analysis_sum">和值分析</string>
+    <string name="analysis_span">跨度分析</string>
+    <string name="analysis_ac">AC值分析</string>
+    <string name="analysis_odd_even">奇偶比</string>
+    <string name="analysis_big_small">大小比</string>
+    <string name="analysis_prime_composite">质合比</string>
+    <string name="analysis_zone">区间分析</string>
+    
+    <!-- Analysis Data Labels -->
+    <string name="analysis_number">号码</string>
+    <string name="analysis_current_omission">当前遗漏</string>
+    <string name="analysis_max_omission">最大遗漏</string>
+    <string name="analysis_avg_omission">平均遗漏</string>
+    <string name="analysis_count">出现次数</string>
+    <string name="analysis_frequency_value">频率</string>
+    <string name="analysis_temperature">冷热度</string>
+    <string name="analysis_hot">热号</string>
+    <string name="analysis_warm">温号</string>
+    <string name="analysis_cold">冷号</string>
+    <string name="analysis_consecutive_numbers">连号组合</string>
+    <string name="analysis_tail">尾数</string>
+    <string name="analysis_sum_value">和值</string>
+    <string name="analysis_span_value">跨度</string>
+    <string name="analysis_ac_value">AC值</string>
+    <string name="analysis_ratio">比例</string>
+    <string name="analysis_zone_range">区间</string>
+    
+    <!-- Prediction Screen -->
+    <string name="screen_prediction_title">智能预测</string>
+    <string name="prediction_recommended">推荐号码</string>
+    <string name="prediction_generate">一键生成</string>
+    <string name="prediction_confidence">置信度：%d%%</string>
+    <string name="prediction_algorithm_explain">算法说明</string>
+    
+    <!-- Profile Screen -->
+    <string name="screen_profile_title">个人中心</string>
+    <string name="profile_login">登录</string>
+    <string name="profile_register">注册</string>
+    <string name="profile_settings">设置</string>
+    <string name="profile_theme">主题设置</string>
+    <string name="profile_about">关于我们</string>
+    
+    <!-- Theme Settings -->
+    <string name="theme_light">日间模式</string>
+    <string name="theme_dark">夜间模式</string>
+    <string name="theme_system">跟随系统</string>
+    
+    <!-- Common -->
+    <string name="common_loading">加载中…</string>
+    <string name="common_error">出错了</string>
+    <string name="common_retry">重试</string>
+    <string name="common_refresh">刷新</string>
+    <string name="common_confirm">确定</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_save">保存</string>
+    <string name="common_delete">删除</string>
+    <string name="common_edit">编辑</string>
+    <string name="common_search">搜索</string>
+    <string name="common_filter">筛选</string>
+    <string name="common_sort">排序</string>
+    <string name="common_more">更多</string>
+    <string name="common_back">返回</string>
+    <string name="common_next">下一步</string>
+    <string name="common_finish">完成</string>
+    <string name="common_empty">暂无数据</string>
+    
+    <!-- Error Messages -->
+    <string name="error_network">网络连接失败，请检查网络设置</string>
+    <string name="error_api">API 错误：%s</string>
+    <string name="error_unauthorized">未授权，请先登录</string>
+    <string name="error_no_data">暂无数据</string>
+    <string name="error_unknown">未知错误</string>
+    <string name="error_timeout">请求超时，请稍后重试</string>
+    
+    <!-- Hints -->
+    <string name="hint_username">请输入用户名</string>
+    <string name="hint_password">请输入密码</string>
+    <string name="hint_email">请输入邮箱</string>
+    <string name="hint_phone">请输入手机号</string>
+    <string name="hint_nickname">请输入昵称</string>
+    
+    <!-- Buttons -->
+    <string name="btn_login">登录</string>
+    <string name="btn_register">注册</string>
+    <string name="btn_logout">退出登录</string>
+    <string name="btn_submit">提交</string>
+    <string name="btn_reset">重置</string>
+    
+    <!-- Content Descriptions -->
+    <string name="desc_lottery_ball">彩票号码球</string>
+    <string name="desc_back_button">返回按钮</string>
+    <string name="desc_menu_button">菜单按钮</string>
+    <string name="desc_refresh_button">刷新按钮</string>
+    <string name="desc_search_button">搜索按钮</string>
+    <string name="desc_user_avatar">用户头像</string>
+</resources>

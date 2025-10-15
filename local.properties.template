@@ -1,0 +1,8 @@
+# 本地配置文件模板
+# 复制此文件为 local.properties 并填入您的API密钥
+
+LOTTERY_API_KEY=your_api_key_here
+
+# 其他本地配置
+# 数据库调试模式
+# DEBUG_DATABASE=false

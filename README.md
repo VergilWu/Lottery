@@ -29,6 +29,7 @@
 - **马尔可夫链预测**: 号码转移概率矩阵
 - **贝叶斯概率模型**: 先验概率和条件概率结合
 - **LSTM神经网络**: TensorFlow Lite深度学习预测
+- **复式票预测**: 智能复式票推荐，提高中奖概率
 
 ### 👤 个人中心
 - **主题切换**: 日间/夜间/跟随系统
@@ -241,3 +242,9 @@ app/src/main/java/com/vergil/lottery/
 ---
 
 **⭐ 如果这个项目对您有帮助，请给我们一个 Star！**
+
+
+
+---
+
+![01](https://github.com/VergilWu/Lottery/blob/main/res/01.png)

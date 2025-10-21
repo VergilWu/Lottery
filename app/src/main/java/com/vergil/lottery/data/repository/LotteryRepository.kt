@@ -26,7 +26,7 @@ class LotteryRepository(
 
 
             val cached = drawHistoryDao.getLatest(lotteryCode)
-            if (cached != null) {
+            if (cached != null && cached.issue != "205068") {
                 Timber.d("Loading from cache: ${cached.issue}")
                 emit(Result.Success(cached.toDomain()))
             }
@@ -35,7 +35,19 @@ class LotteryRepository(
             val response = apiService.getLatestDraw(lotteryCode)
             if (response.code == 1) {
                 val drawResult = response.data.toDomain()
-
+                
+                // 过滤掉205068期（后端bug）
+                if (drawResult.issue == "205068") {
+                    Timber.w("Filtered out 205068 issue from latest draw")
+                    val validCached = drawHistoryDao.getLatest(lotteryCode)
+                    if (validCached != null && validCached.issue != "205068") {
+                        Timber.d("Using cached data instead of 205068: ${validCached.issue}")
+                        emit(Result.Success(validCached.toDomain()))
+                    } else {
+                        emit(Result.Error(Exception("Latest draw is invalid (205068)")))
+                    }
+                    return@flow
+                }
 
                 val entity = DrawHistoryEntity.fromDomain(drawResult)
                 drawHistoryDao.insert(entity)
@@ -55,7 +67,10 @@ class LotteryRepository(
             Timber.e(e, "Failed to fetch latest draw for $lotteryCode")
 
             val cached = drawHistoryDao.getLatest(lotteryCode)
-            if (cached == null) {
+            if (cached != null && cached.issue != "205068") {
+                Timber.d("Using cached data after error (filtered out 205068): ${cached.issue}")
+                emit(Result.Success(cached.toDomain()))
+            } else {
                 emit(Result.Error(e))
             }
         }
@@ -68,7 +83,7 @@ class LotteryRepository(
 
 
             val cached = drawHistoryDao.getByIssue(lotteryCode, issue)
-            if (cached != null) {
+            if (cached != null && cached.issue != "205068") {
                 Timber.d("Loaded from cache: ${cached.issue}")
                 emit(Result.Success(cached.toDomain()))
                 return@flow
@@ -78,7 +93,13 @@ class LotteryRepository(
             val response = apiService.getDrawByIssue(issue, lotteryCode)
             if (response.code == 1) {
                 val drawResult = response.data.toDomain()
-
+                
+                // 过滤掉205068期（后端bug）
+                if (drawResult.issue == "205068") {
+                    Timber.w("Filtered out 205068 issue from getDrawByIssue")
+                    emit(Result.Error(Exception("Issue 205068 is invalid")))
+                    return@flow
+                }
 
                 val entity = DrawHistoryEntity.fromDomain(drawResult)
                 drawHistoryDao.insert(entity)
@@ -103,8 +124,10 @@ class LotteryRepository(
             if (!forceRefresh) {
                 val cachedList = drawHistoryDao.getHistoryByCodeOnce(lotteryCode, size)
                 if (cachedList.isNotEmpty()) {
-                    Timber.d("Loaded ${cachedList.size} records from cache")
-                    emit(Result.Success(cachedList.map { it.toDomain() }))
+                    val filteredCachedList = cachedList.map { it.toDomain() }
+                        .filter { it.issue != "205068" } // 过滤掉205068期（后端bug）
+                    Timber.d("Loaded ${filteredCachedList.size} records from cache (filtered out 205068)")
+                    emit(Result.Success(filteredCachedList))
                 }
             }
 
@@ -112,7 +135,9 @@ class LotteryRepository(
             val response = apiService.getHistory(lotteryCode, size)
             if (response.code == 1) {
                 val drawResults = response.data.map { it.toDomain() }
+                    .filter { it.issue != "205068" } // 过滤掉205068期（后端bug）
 
+                Timber.d("Filtered out 205068 issue, remaining ${drawResults.size} records")
 
                 val entities = drawResults.map { DrawHistoryEntity.fromDomain(it) }
                 drawHistoryDao.insertAll(entities)
@@ -125,7 +150,12 @@ class LotteryRepository(
             } else {
 
                 val cachedList = drawHistoryDao.getHistoryByCodeOnce(lotteryCode, size)
-                if (cachedList.isEmpty()) {
+                if (cachedList.isNotEmpty()) {
+                    val filteredCachedList = cachedList.map { it.toDomain() }
+                        .filter { it.issue != "205068" } // 过滤掉205068期（后端bug）
+                    Timber.d("Using cached data (filtered out 205068): ${filteredCachedList.size} records")
+                    emit(Result.Success(filteredCachedList))
+                } else {
                     emit(Result.Error(Exception(response.msg)))
                 }
             }
@@ -133,7 +163,12 @@ class LotteryRepository(
             Timber.e(e, "Failed to fetch history for $lotteryCode")
 
             val cachedList = drawHistoryDao.getHistoryByCodeOnce(lotteryCode, size)
-            if (cachedList.isEmpty()) {
+            if (cachedList.isNotEmpty()) {
+                val filteredCachedList = cachedList.map { it.toDomain() }
+                    .filter { it.issue != "205068" } // 过滤掉205068期（后端bug）
+                Timber.d("Using cached data after error (filtered out 205068): ${filteredCachedList.size} records")
+                emit(Result.Success(filteredCachedList))
+            } else {
                 emit(Result.Error(e))
             }
         }
@@ -142,7 +177,10 @@ class LotteryRepository(
 
     fun observeHistory(lotteryCode: String, size: Int = 100): Flow<List<DrawResult>> {
         return drawHistoryDao.getHistoryByCode(lotteryCode, size)
-            .map { entities -> entities.map { it.toDomain() } }
+            .map { entities -> 
+                entities.map { it.toDomain() }
+                    .filter { it.issue != "205068" } // 过滤掉205068期（后端bug）
+            }
             .flowOn(Dispatchers.IO)
     }
 

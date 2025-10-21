@@ -33,6 +33,9 @@ object PredictionContract {
         data class SetPredictionCount(val count: Int) : Intent
 
 
+        data class SetComplexPredictionCount(val count: Int) : Intent
+
+
         data object SelectAllAlgorithms : Intent
 
 
@@ -40,6 +43,9 @@ object PredictionContract {
 
 
         data object ShowAlgorithmExplanation : Intent
+
+
+        data object GenerateComplexPrediction : Intent
     }
 
 
@@ -51,9 +57,11 @@ object PredictionContract {
         val currentAlgorithm: String? = null,  
         val algorithmProgress: Float = 0f,  
         val predictions: List<PredictionResult> = emptyList(),
+        val complexPredictions: List<ComplexPredictionResult> = emptyList(),
         val selectedMode: PredictionMode = PredictionMode.COMPREHENSIVE,  
         val selectedAlgorithms: Set<PredictionAlgorithm> = PredictionMode.COMPREHENSIVE.algorithms,
-        val predictionCount: Int = 5, 
+        val predictionCount: Int = 5,
+        val complexPredictionCount: Int = 5,
         val error: String? = null
     ) : MviState
 
@@ -192,6 +200,23 @@ object PredictionContract {
         val algorithmScores: Map<PredictionAlgorithm, Float>, 
         val confidence: Float, 
         val explanation: String 
+    )
+
+
+    @Immutable
+    data class ComplexPredictionResult(
+        val id: String,
+        val lotteryType: LotteryType,
+        val redNumbers: List<String>,
+        val blueNumbers: List<String>,
+        val totalScore: Float,
+        val algorithmScores: Map<PredictionAlgorithm, Float>,
+        val confidence: Float,
+        val explanation: String,
+        val combinationCount: Int,
+        val coverageRate: Float,
+        val hotNumbers: List<String>,
+        val coldNumbers: List<String>
     )
 
 

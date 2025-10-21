@@ -11,6 +11,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +47,7 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.vergil.lottery.presentation.components.LiquidGlassCard
 import com.vergil.lottery.presentation.components.LiquidGlassTopAppBar
 import com.vergil.lottery.presentation.components.LiquidButton
+import com.vergil.lottery.presentation.components.LiquidSlider
 import com.vergil.lottery.presentation.components.ShadowText
 import com.vergil.lottery.core.constants.ThemeMode
 import androidx.compose.material3.CircularProgressIndicator
@@ -180,6 +183,12 @@ fun PredictionScreen(
         },
         onShowAlgorithmExplanation = {
             viewModel.handleIntent(PredictionContract.Intent.ShowAlgorithmExplanation)
+        },
+        onGenerateComplex = {
+            viewModel.handleIntent(PredictionContract.Intent.GenerateComplexPrediction)
+        },
+        onSetComplexPredictionCount = { count ->
+            viewModel.handleIntent(PredictionContract.Intent.SetComplexPredictionCount(count))
         }
     )
 }
@@ -197,7 +206,9 @@ private fun PredictionContent(
     onSelectAllAlgorithms: () -> Unit,
     onDeselectAllAlgorithms: () -> Unit,
     onGenerate: () -> Unit,
-    onShowAlgorithmExplanation: () -> Unit
+    onShowAlgorithmExplanation: () -> Unit,
+    onGenerateComplex: () -> Unit,
+    onSetComplexPredictionCount: (Int) -> Unit
 ) {
     val context = LocalContext.current
     LazyColumn(
@@ -268,13 +279,33 @@ private fun PredictionContent(
 
         item {
 
-            GenerateButton(
-                backdrop = backdrop,
-                isLoading = state.isGenerating,
-                enabled = !state.isLoading && state.selectedAlgorithms.isNotEmpty(),
-                onClick = onGenerate,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                GenerateButton(
+                    backdrop = backdrop,
+                    isLoading = state.isGenerating,
+                    enabled = !state.isLoading && state.selectedAlgorithms.isNotEmpty(),
+                    onClick = onGenerate,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                ComplexPredictionCountSlider(
+                    backdrop = backdrop,
+                    currentCount = state.complexPredictionCount,
+                    onCountChanged = onSetComplexPredictionCount,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                ComplexPredictionButton(
+                    backdrop = backdrop,
+                    isLoading = state.isGenerating,
+                    enabled = !state.isLoading && state.selectedAlgorithms.isNotEmpty(),
+                    onClick = onGenerateComplex,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
 
 
@@ -292,48 +323,92 @@ private fun PredictionContent(
                     )
                 }
             }
-            state.predictions.isEmpty() -> {
+            state.predictions.isEmpty() && state.complexPredictions.isEmpty() -> {
                 item {
                     EmptyState(modifier = Modifier.fillMaxWidth())
                 }
             }
             else -> {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        ShadowText(
-                            text = "预测结果（共 ${state.predictions.size} 注）",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                        )
-
-                        LiquidButton(
-                            onClick = { 
-
-                                copyPredictionsToClipboard(context, state.predictions)
-                            },
-                            backdrop = backdrop,
-                            tint = Color(0xFF34C759) 
+                if (state.predictions.isNotEmpty()) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = "复制结果",
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
                             ShadowText(
-                                text = "复制",
-                                style = MaterialTheme.typography.bodySmall
+                                text = "普通预测结果（共 ${state.predictions.size} 注）",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                             )
+
+                            LiquidButton(
+                                onClick = { 
+                                    copyPredictionsToClipboard(context, state.predictions)
+                                },
+                                backdrop = backdrop,
+                                tint = Color(0xFF34C759) 
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "复制结果",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                ShadowText(
+                                    text = "复制",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
                         }
+                    }
+
+                    items(state.predictions.size) { index ->
+                        PredictionResultCard(backdrop = backdrop, prediction = state.predictions[index], themeMode = themeMode)
                     }
                 }
 
-                items(state.predictions.size) { index ->
-                    PredictionResultCard(backdrop = backdrop, prediction = state.predictions[index], themeMode = themeMode)
+                if (state.complexPredictions.isNotEmpty()) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ShadowText(
+                                text = "复式票预测结果",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+
+                            LiquidButton(
+                                onClick = { 
+                                    copyComplexPredictionsToClipboard(context, state.complexPredictions)
+                                },
+                                backdrop = backdrop,
+                                tint = Color(0xFFFF6B35) 
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "复制复式票结果",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                ShadowText(
+                                    text = "复制",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+
+                    items(state.complexPredictions.size) { index ->
+                        ComplexPredictionResultCard(
+                            backdrop = backdrop, 
+                            prediction = state.complexPredictions[index], 
+                            themeMode = themeMode
+                        )
+                    }
                 }
             }
         }
@@ -595,6 +670,289 @@ private fun GenerateButton(
                 text = "生成智能预测",
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
             )
+        }
+    }
+}
+
+@Composable
+private fun ComplexPredictionCountSlider(
+    backdrop: Backdrop,
+    currentCount: Int,
+    onCountChanged: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LiquidGlassCard(
+        backdrop = backdrop,
+        modifier = modifier,
+        themeMode = ThemeMode.LIGHT
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ShadowText(
+                    text = "复式票目标注数",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+
+                ShadowText(
+                    text = "${currentCount}注单式票",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            LiquidSlider(
+                value = { currentCount.toFloat() },
+                onValueChange = { value -> 
+                    val intValue = value.toInt().coerceIn(1, 100)
+                    onCountChanged(intValue)
+                },
+                valueRange = 1f..100f,
+                visibilityThreshold = 0.1f,
+                backdrop = backdrop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = { _: androidx.compose.ui.geometry.Offset -> 
+                            },
+                            onDragEnd = { 
+                            },
+                            onDrag = { change: androidx.compose.ui.input.pointer.PointerInputChange, _: androidx.compose.ui.geometry.Offset ->
+                            }
+                        )
+                    }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "拖动滑块选择复式票目标注数，系统将自动计算需要的号码数量",
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun ComplexPredictionButton(
+    backdrop: Backdrop,
+    isLoading: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LiquidButton(
+        onClick = onClick,
+        backdrop = backdrop,
+        modifier = modifier.height(56.dp),
+        tint = if (enabled && !isLoading) Color(0xFFFF6B35) else Color.Gray,
+        isInteractive = enabled && !isLoading
+    ) {
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = Color.White
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            ShadowText("复式票生成中...", style = MaterialTheme.typography.bodyMedium)
+        } else {
+            ShadowText(
+                text = "生成复式票预测",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ComplexPredictionResultCard(
+    backdrop: Backdrop,
+    prediction: PredictionContract.ComplexPredictionResult,
+    themeMode: ThemeMode,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    LiquidGlassCard(
+        backdrop = backdrop,
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded },
+        themeMode = themeMode
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "复式票号码选择",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+
+                prediction.redNumbers.forEach { number ->
+                    LotteryBall(
+                        number = number,
+                        isBlue = false,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+
+
+                if (prediction.blueNumbers.isNotEmpty()) {
+                    BallDivider(size = 32.dp)
+                }
+
+
+                prediction.blueNumbers.forEach { number ->
+                    LotteryBall(
+                        number = number,
+                        isBlue = true,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "复式票评分",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                ScoreIndicator(
+                    score = prediction.totalScore,
+                    modifier = Modifier.width(120.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "实际组合: ${prediction.combinationCount}注",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Text(
+                    text = "投注金额: ${prediction.combinationCount * 2}元",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+
+            if (prediction.hotNumbers.isNotEmpty() || prediction.coldNumbers.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (prediction.hotNumbers.isNotEmpty()) {
+                        Text(
+                            text = "热号: ${prediction.hotNumbers.joinToString(",")}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFFF5722)
+                        )
+                    }
+
+                    if (prediction.coldNumbers.isNotEmpty()) {
+                        Text(
+                            text = "冷号: ${prediction.coldNumbers.joinToString(",")}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF2196F3)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+
+            Text(
+                text = prediction.explanation,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn() + slideInVertically(),
+                exit = fadeOut() + slideOutVertically()
+            ) {
+                Column(
+                    modifier = Modifier.padding(top = 12.dp)
+                ) {
+                    Text(
+                        text = "算法分项评分",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    prediction.algorithmScores.forEach { (algorithm, score) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = algorithm.displayName,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = "%.1f".format(score),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "复式票说明: 选择更多号码，可组合出多注单式票，提高中奖概率",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 }
@@ -1118,7 +1476,7 @@ private fun copyPredictionsToClipboard(
         appendLine()
 
         predictions.forEachIndexed { index, prediction ->
-            append("第 ${index + 1} 注: ")
+            appendLine("第 ${index + 1} 注: ")
 
 
             prediction.redNumbers.forEach { number ->
@@ -1141,6 +1499,49 @@ private fun copyPredictionsToClipboard(
     }
 
     val clip = android.content.ClipData.newPlainText("预测结果", resultText)
+    clipboardManager.setPrimaryClip(clip)
+}
+
+private fun copyComplexPredictionsToClipboard(
+    context: Context,
+    predictions: List<PredictionContract.ComplexPredictionResult>
+) {
+    if (predictions.isEmpty()) return
+
+    val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val lotteryType = predictions.first().lotteryType
+
+    val resultText = buildString {
+        appendLine("🎯 ${lotteryType.displayName} 复式票预测结果")
+        appendLine("📅 生成时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}")
+        appendLine("📊 复式票推荐（可组合出多注单式票）")
+        appendLine()
+
+        predictions.forEachIndexed { index, prediction ->
+            append("复式票 ${index + 1}: ")
+
+
+            prediction.redNumbers.forEach { number ->
+                append("$number ")
+            }
+
+
+            if (prediction.blueNumbers.isNotEmpty()) {
+                append("| ")
+                prediction.blueNumbers.forEach { number ->
+                    append("$number ")
+                }
+            }
+
+            appendLine(" (实际组合: ${prediction.combinationCount}注, 投注金额: ${prediction.combinationCount * 2}元)")
+        }
+
+        appendLine()
+        appendLine("💡 复式票说明: 复式票选择更多号码，可组合出多注单式票，提高中奖概率，但投注金额也会相应增加")
+        appendLine("💡 温馨提示: 彩票有风险，投注需谨慎！")
+    }
+
+    val clip = android.content.ClipData.newPlainText("复式票预测结果", resultText)
     clipboardManager.setPrimaryClip(clip)
 }
 
@@ -1402,7 +1803,9 @@ private fun PredictionScreenDefaultPreview() {
             onSelectAllAlgorithms = {},
             onDeselectAllAlgorithms = {},
             onGenerate = {},
-            onShowAlgorithmExplanation = {}
+            onShowAlgorithmExplanation = {},
+            onGenerateComplex = {},
+            onSetComplexPredictionCount = {}
         )
     }
 }
@@ -1426,7 +1829,9 @@ private fun PredictionScreenDarkPreview() {
             onSelectAllAlgorithms = {},
             onDeselectAllAlgorithms = {},
             onGenerate = {},
-            onShowAlgorithmExplanation = {}
+            onShowAlgorithmExplanation = {},
+            onGenerateComplex = {},
+            onSetComplexPredictionCount = {}
         )
     }
 }
@@ -1461,7 +1866,9 @@ private fun PredictionScreenGeneratingPreview() {
             onSelectAllAlgorithms = {},
             onDeselectAllAlgorithms = {},
             onGenerate = {},
-            onShowAlgorithmExplanation = {}
+            onShowAlgorithmExplanation = {},
+            onGenerateComplex = {},
+            onSetComplexPredictionCount = {}
         )
     }
 }
@@ -1496,7 +1903,9 @@ private fun PredictionScreenErrorPreview() {
             onSelectAllAlgorithms = {},
             onDeselectAllAlgorithms = {},
             onGenerate = {},
-            onShowAlgorithmExplanation = {}
+            onShowAlgorithmExplanation = {},
+            onGenerateComplex = {},
+            onSetComplexPredictionCount = {}
         )
     }
 }

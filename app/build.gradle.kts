@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -23,10 +25,16 @@ android {
             useSupportLibrary = true
         }
         
-        // API Key placeholder - 从环境变量或local.properties读取
+        val localPropertiesFile = rootProject.file("local.properties")
+        val localProperties = Properties()
+        if (localPropertiesFile.exists()) {
+            localPropertiesFile.inputStream().use { localProperties.load(it) }
+        }
+        
         val apiKey = System.getenv("LOTTERY_API_KEY") 
-            ?: project.findProperty("LOTTERY_API_KEY")?.toString() 
+            ?: localProperties.getProperty("LOTTERY_API_KEY")
             ?: ""
+        println("Gradle API Key: $apiKey")
         buildConfigField("String", "API_KEY", "\"$apiKey\"")
     }
 

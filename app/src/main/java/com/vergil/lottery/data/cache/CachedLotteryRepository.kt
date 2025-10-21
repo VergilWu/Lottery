@@ -38,14 +38,19 @@ class CachedLotteryRepository(
                 if (!cachedData.isNullOrEmpty()) {
                     try {
                         val drawResult = json.decodeFromString<DrawResult>(cachedData)
-                        Timber.d("Returning cached data for $lotteryCode")
-                        emit(Result.Success(drawResult))
+                        // 过滤掉205068期（后端bug）
+                        if (drawResult.issue == "205068") {
+                            Timber.w("Filtered out 205068 issue from cached data for $lotteryCode")
+                            cacheManager.clearCache(lotteryType)
+                        } else {
+                            Timber.d("Returning cached data for $lotteryCode")
+                            emit(Result.Success(drawResult))
 
-
-                        if (cacheManager.shouldRefreshInBackground(lotteryType)) {
-                            refreshInBackground(lotteryCode)
+                            if (cacheManager.shouldRefreshInBackground(lotteryType)) {
+                                refreshInBackground(lotteryCode)
+                            }
+                            return@flow
                         }
-                        return@flow
                     } catch (e: Exception) {
                         Timber.w(e, "Failed to parse cached data for $lotteryCode")
 
@@ -63,8 +68,14 @@ class CachedLotteryRepository(
                     if (!cachedData.isNullOrEmpty()) {
                         try {
                             val drawResult = json.decodeFromString<DrawResult>(cachedData)
-                            Timber.d("Network failed, returning stale cache for $lotteryCode")
-                            emit(Result.Success(drawResult))
+                            // 过滤掉205068期（后端bug）
+                            if (drawResult.issue == "205068") {
+                                Timber.w("Filtered out 205068 issue from stale cache for $lotteryCode")
+                                emit(Result.Error(exception))
+                            } else {
+                                Timber.d("Network failed, returning stale cache for $lotteryCode")
+                                emit(Result.Success(drawResult))
+                            }
                         } catch (e: Exception) {
                             Timber.e(e, "Failed to parse stale cache for $lotteryCode")
                             emit(Result.Error(exception))
@@ -76,10 +87,15 @@ class CachedLotteryRepository(
                 .collect { result ->
                     when (result) {
                         is Result.Success -> {
-
-                            val jsonData = json.encodeToString(result.data)
-                            cacheManager.updateCache(lotteryType, jsonData)
-                            emit(result)
+                            // 过滤掉205068期（后端bug）
+                            if (result.data.issue == "205068") {
+                                Timber.w("Filtered out 205068 issue from network data for $lotteryCode")
+                                emit(Result.Error(Exception("Latest draw is invalid (205068)")))
+                            } else {
+                                val jsonData = json.encodeToString(result.data)
+                                cacheManager.updateCache(lotteryType, jsonData)
+                                emit(result)
+                            }
                         }
                         is Result.Error -> emit(result)
                         is Result.Loading -> emit(result)
@@ -108,8 +124,10 @@ class CachedLotteryRepository(
                 if (!cachedData.isNullOrEmpty()) {
                     try {
                         val historyList = json.decodeFromString<List<DrawResult>>(cachedData)
-                        Timber.d("Returning cached history for $lotteryCode (${historyList.size} items)")
-                        emit(Result.Success(historyList))
+                        // 过滤掉205068期（后端bug）
+                        val filteredHistory = historyList.filter { it.issue != "205068" }
+                        Timber.d("Returning cached history for $lotteryCode (${filteredHistory.size} items, filtered out 205068)")
+                        emit(Result.Success(filteredHistory))
 
 
                         if (cacheManager.shouldRefreshInBackground(lotteryType)) {
@@ -132,8 +150,10 @@ class CachedLotteryRepository(
                     if (!cachedData.isNullOrEmpty()) {
                         try {
                             val historyList = json.decodeFromString<List<DrawResult>>(cachedData)
-                            Timber.d("Network failed, returning stale cache for $lotteryCode history")
-                            emit(Result.Success(historyList))
+                            // 过滤掉205068期（后端bug）
+                            val filteredHistory = historyList.filter { it.issue != "205068" }
+                            Timber.d("Network failed, returning stale cache for $lotteryCode history (filtered out 205068)")
+                            emit(Result.Success(filteredHistory))
                         } catch (e: Exception) {
                             Timber.e(e, "Failed to parse stale cache for $lotteryCode history")
                             emit(Result.Error(exception))
@@ -145,10 +165,11 @@ class CachedLotteryRepository(
                 .collect { result ->
                     when (result) {
                         is Result.Success -> {
-
-                            val jsonData = json.encodeToString(result.data)
+                            // 过滤掉205068期（后端bug）
+                            val filteredHistory = result.data.filter { it.issue != "205068" }
+                            val jsonData = json.encodeToString(filteredHistory)
                             cacheManager.updateCache(lotteryType, jsonData)
-                            emit(result)
+                            emit(Result.Success(filteredHistory))
                         }
                         is Result.Error -> emit(result)
                         is Result.Loading -> emit(result)

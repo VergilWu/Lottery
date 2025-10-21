@@ -7,12 +7,15 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import timber.log.Timber
 
 
 class LotteryApiService(private val httpClient: HttpClient) {
 
 
     suspend fun getLatestDraw(lotteryCode: String): ApiResponse<DrawResultDTO> {
+        Timber.d("API Key: ${AppConstants.API_KEY}")
+        Timber.d("Requesting latest draw for: $lotteryCode")
         return httpClient.get("kjxx") {
             parameter("apikey", AppConstants.API_KEY)
             parameter("code", lotteryCode)
@@ -21,6 +24,8 @@ class LotteryApiService(private val httpClient: HttpClient) {
 
 
     suspend fun getDrawByIssue(issue: String, lotteryCode: String): ApiResponse<DrawResultDTO> {
+        Timber.d("API Key: ${AppConstants.API_KEY}")
+        Timber.d("Requesting latest draw for: $lotteryCode")
         return httpClient.get("issue") {
             parameter("apikey", AppConstants.API_KEY)
             parameter("issue", issue)
@@ -30,6 +35,8 @@ class LotteryApiService(private val httpClient: HttpClient) {
 
 
     suspend fun getHistory(lotteryCode: String, size: Int = 100): ApiResponse<List<DrawResultDTO>> {
+        Timber.d("API Key: ${AppConstants.API_KEY}")
+        Timber.d("Requesting latest draw for: $lotteryCode")
         return httpClient.get("history") {
             parameter("apikey", AppConstants.API_KEY)
             parameter("code", lotteryCode)

@@ -101,6 +101,11 @@ class PredictionViewModel(
                 setState { copy(predictionCount = validCount) }
             }
 
+            is PredictionContract.Intent.SetComplexPredictionCount -> {
+                val validCount = intent.count.coerceIn(1, 100)
+                setState { copy(complexPredictionCount = validCount) }
+            }
+
             is PredictionContract.Intent.SelectAllAlgorithms -> {
                 setState {
                     copy(
@@ -121,6 +126,10 @@ class PredictionViewModel(
 
             is PredictionContract.Intent.ShowAlgorithmExplanation -> {
                 setEffect(PredictionContract.Effect.ShowAlgorithmExplanation)
+            }
+
+            is PredictionContract.Intent.GenerateComplexPrediction -> {
+                generateComplexPredictions()
             }
         }
     }
@@ -277,6 +286,132 @@ class PredictionViewModel(
                 }
                 setEffect(PredictionContract.Effect.ShowToast("生成预测失败: ${e.message}"))
                 Timber.e(e, "Failed to generate predictions")
+            }
+        }
+    }
+
+    private fun generateComplexPredictions() {
+        viewModelScope.launch {
+            try {
+                setState { 
+                    copy(
+                        isGenerating = true, 
+                        currentAlgorithm = "正在加载数据...",
+                        algorithmProgress = 0f,
+                        error = null
+                    ) 
+                }
+
+
+                val lotteryCode = state.value.selectedType.code
+                var historyData = emptyList<com.vergil.lottery.domain.model.DrawResult>()
+                var loadError: Throwable? = null
+
+                repository.getHistory(lotteryCode, size = 100, forceRefresh = false)
+                    .collect { result ->
+                        when (result) {
+                            is Result.Success -> {
+                                historyData = result.data
+                            }
+                            is Result.Error -> {
+                                loadError = result.exception
+                            }
+                            is Result.Loading -> {
+
+                            }
+                        }
+                    }
+
+
+                if (loadError != null) {
+                    throw loadError!!
+                }
+
+                if (historyData.size < 20) {
+                    setState {
+                        copy(
+                            isGenerating = false,
+                            currentAlgorithm = null,
+                            algorithmProgress = 0f,
+                            error = "历史数据不足（至少需要20期）"
+                        )
+                    }
+                    setEffect(PredictionContract.Effect.ShowToast("历史数据不足，请先加载更多数据"))
+                    return@launch
+                }
+
+
+                if (state.value.selectedAlgorithms.isEmpty()) {
+                    setState {
+                        copy(
+                            isGenerating = false,
+                            currentAlgorithm = null,
+                            algorithmProgress = 0f,
+                            error = "请至少选择一种预测算法"
+                        )
+                    }
+                    setEffect(PredictionContract.Effect.ShowToast("请至少选择一种预测算法"))
+                    return@launch
+                }
+
+
+                val totalAlgorithms = state.value.selectedAlgorithms.size
+                var completedAlgorithms = 0
+
+
+                state.value.selectedAlgorithms.forEachIndexed { index, algorithm ->
+                    setState {
+                        copy(
+                            currentAlgorithm = "复式票${algorithm.displayName}",
+                            algorithmProgress = ((index + 1).toFloat() / totalAlgorithms).coerceIn(0f, 1f)
+                        )
+                    }
+
+                    kotlinx.coroutines.delay(50)
+                }
+
+
+                val complexPredictions = predictionEngine.generateComplexPredictions(
+                    history = historyData,
+                    lotteryType = state.value.selectedType,
+                    algorithms = state.value.selectedAlgorithms,
+                    targetCombinations = state.value.complexPredictionCount
+                )
+
+
+                setState {
+                    copy(
+                        currentAlgorithm = "复式票生成完成",
+                        algorithmProgress = 1f
+                    )
+                }
+                kotlinx.coroutines.delay(300)  
+
+                setState {
+                    copy(
+                        isGenerating = false,
+                        currentAlgorithm = null,
+                        algorithmProgress = 0f,
+                        complexPredictions = complexPredictions,
+                        error = null
+                    )
+                }
+
+                setEffect(PredictionContract.Effect.ShowGenerateSuccess)
+                setEffect(PredictionContract.Effect.ScrollToResults)  
+                Timber.d("Generated ${complexPredictions.size} complex predictions")
+
+            } catch (e: Exception) {
+                setState {
+                    copy(
+                        isGenerating = false,
+                        currentAlgorithm = null,
+                        algorithmProgress = 0f,
+                        error = e.message ?: "生成失败"
+                    )
+                }
+                setEffect(PredictionContract.Effect.ShowToast("生成复式票预测失败: ${e.message}"))
+                Timber.e(e, "Failed to generate complex predictions")
             }
         }
     }

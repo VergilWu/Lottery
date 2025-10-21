@@ -7,6 +7,7 @@ import com.vergil.lottery.domain.model.DrawResult
 import com.vergil.lottery.presentation.screens.prediction.PredictionContract.NumberScore
 import com.vergil.lottery.presentation.screens.prediction.PredictionContract.PredictionAlgorithm
 import com.vergil.lottery.presentation.screens.prediction.PredictionContract.PredictionResult
+import com.vergil.lottery.presentation.screens.prediction.PredictionContract.ComplexPredictionResult
 import timber.log.Timber
 import kotlin.math.abs
 import kotlin.math.exp
@@ -85,6 +86,41 @@ class PredictionEngine(
                 sharedData = sharedData
             )
         }
+    }
+
+
+    fun generateComplexPredictions(
+        history: List<DrawResult>,
+        lotteryType: LotteryType,
+        algorithms: Set<PredictionAlgorithm>,
+        targetCombinations: Int
+    ): List<ComplexPredictionResult> {
+        if (history.size < 20) {
+            Timber.w("History data insufficient: ${history.size} draws")
+            return emptyList()
+        }
+
+        val config = getLotteryConfig(lotteryType)
+
+
+        val sharedData = precomputeSharedData(history, config)
+
+
+        val redScores = calculateNumberScores(history, lotteryType, config.redRange, algorithms, isRed = true, sharedData)
+        val blueScores = calculateNumberScores(history, lotteryType, config.blueRange, algorithms, isRed = false, sharedData)
+
+        return listOf(
+            generateComplexPrediction(
+                id = "complex_1",
+                lotteryType = lotteryType,
+                redScores = redScores,
+                blueScores = blueScores,
+                config = config,
+                algorithms = algorithms,
+                sharedData = sharedData,
+                targetCombinations = targetCombinations
+            )
+        )
     }
 
 
@@ -623,6 +659,110 @@ class PredictionEngine(
     }
 
 
+    private fun generateComplexPrediction(
+        id: String,
+        lotteryType: LotteryType,
+        redScores: Map<String, NumberScore>,
+        blueScores: Map<String, NumberScore>,
+        config: LotteryConfig,
+        algorithms: Set<PredictionAlgorithm>,
+        sharedData: SharedData,
+        targetCombinations: Int
+    ): ComplexPredictionResult {
+
+        val (optimalRedCount, optimalBlueCount) = calculateOptimalNumbersForTarget(
+            config.redCount,
+            config.blueCount,
+            targetCombinations
+        )
+
+        val redNumbers = selectComplexNumbers(redScores, optimalRedCount, config.redRange)
+        val blueNumbers = selectComplexNumbers(blueScores, optimalBlueCount, config.blueRange)
+        
+        if (redNumbers.isEmpty() && blueNumbers.isEmpty()) {
+            return ComplexPredictionResult(
+                id = id,
+                lotteryType = lotteryType,
+                redNumbers = emptyList(),
+                blueNumbers = emptyList(),
+                totalScore = 0f,
+                algorithmScores = emptyMap(),
+                confidence = 0f,
+                explanation = "无法生成复式票预测",
+                combinationCount = 0,
+                coverageRate = 0f,
+                hotNumbers = emptyList(),
+                coldNumbers = emptyList()
+            )
+        }
+
+
+        val optimizedRed = applyComplexOptimization(
+            redNumbers.map { it.toInt() },
+            config.redRange,
+            algorithms
+        ).map { it.toString().padStart(2, '0') }
+
+
+        val redAvgScore = optimizedRed.mapNotNull { redScores[it]?.totalScore }
+            .takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+        val blueAvgScore = blueNumbers.mapNotNull { blueScores[it]?.totalScore }
+            .takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+
+
+        val complexBonus = calculateComplexBonus(
+            optimizedRed.map { it.toInt() },
+            config.redRange,
+            algorithms
+        )
+
+
+        val totalScore = if (blueNumbers.isEmpty()) {
+            (redAvgScore * (1 + complexBonus) * 100).coerceIn(0f, 100f)
+        } else {
+            ((redAvgScore * 0.7f + blueAvgScore * 0.3f) * (1 + complexBonus) * 100)
+                .coerceIn(0f, 100f)
+        }
+
+
+        val algorithmScores = algorithms.associateWith { algo ->
+            calculateAlgorithmScore(optimizedRed + blueNumbers, redScores + blueScores, algo)
+        }
+
+
+        val combinationCount = calculateCombinationCount(optimizedRed, blueNumbers, config)
+        val coverageRate = calculateCoverageRate(optimizedRed, blueNumbers, redScores, blueScores)
+        val hotNumbers = identifyHotNumbers(optimizedRed, redScores)
+        val coldNumbers = identifyColdNumbers(optimizedRed, redScores)
+
+
+        val explanation = generateComplexExplanation(
+            optimizedRed, 
+            blueNumbers, 
+            redScores, 
+            blueScores, 
+            algorithms,
+            combinationCount,
+            coverageRate
+        )
+
+        return ComplexPredictionResult(
+            id = id,
+            lotteryType = lotteryType,
+            redNumbers = if (shouldSortNumbers(lotteryType, isRed = true)) optimizedRed.sorted() else optimizedRed,
+            blueNumbers = if (shouldSortNumbers(lotteryType, isRed = false)) blueNumbers.sorted() else blueNumbers,
+            totalScore = totalScore,
+            algorithmScores = algorithmScores,
+            confidence = totalScore / 100f,
+            explanation = explanation,
+            combinationCount = combinationCount,
+            coverageRate = coverageRate,
+            hotNumbers = hotNumbers,
+            coldNumbers = coldNumbers
+        )
+    }
+
+
     private fun shouldSortNumbers(lotteryType: LotteryType, isRed: Boolean): Boolean {
         return when (lotteryType) {
 
@@ -899,6 +1039,504 @@ class PredictionEngine(
         }
 
         return mutable
+    }
+
+
+    private fun selectComplexNumbers(
+        scores: Map<String, NumberScore>,
+        count: Int,
+        range: IntRange
+    ): List<String> {
+        if (count <= 0) return emptyList()
+        if (scores.isEmpty()) return emptyList()
+        
+        val selected = mutableSetOf<String>()
+        val candidates = scores.toList().sortedByDescending { it.second.totalScore }
+
+
+        val topCandidates = candidates.take(count * 3)
+        val highScoreNumbers = topCandidates.filter { it.second.totalScore > 0.6f }
+        val mediumScoreNumbers = topCandidates.filter { it.second.totalScore in 0.4f..0.6f }
+        val lowScoreNumbers = topCandidates.filter { it.second.totalScore < 0.4f }
+
+
+        val hotNumbers = highScoreNumbers.take(count / 2)
+        val balancedNumbers = mediumScoreNumbers.take(count / 3)
+        val coldNumbers = lowScoreNumbers.take(count / 6)
+
+
+        selected.addAll(hotNumbers.map { it.first })
+        selected.addAll(balancedNumbers.map { it.first })
+        selected.addAll(coldNumbers.map { it.first })
+
+
+        while (selected.size < count && selected.size < candidates.size) {
+            val available = candidates.filter { it.first !in selected }
+            if (available.isEmpty()) break
+            selected.add(available.random().first)
+        }
+
+        return selected.toList()
+    }
+
+
+    private fun selectComplexNumbersForTarget(
+        scores: Map<String, NumberScore>,
+        baseCount: Int,
+        range: IntRange,
+        targetCombinations: Int
+    ): List<String> {
+        val selected = mutableSetOf<String>()
+        val candidates = scores.toList().sortedByDescending { it.second.totalScore }
+
+        val redCount = baseCount
+        val blueCount = if (baseCount > 0) 1 else 0
+
+        val redNeeded = calculateNumbersNeededForCombinations(redCount, targetCombinations)
+        val blueNeeded = calculateNumbersNeededForCombinations(blueCount, targetCombinations)
+
+        val totalNeeded = if (baseCount > 0) redNeeded else blueNeeded
+
+        val topCandidates = candidates.take(totalNeeded * 2)
+        val highScoreNumbers = topCandidates.filter { it.second.totalScore > 0.6f }
+        val mediumScoreNumbers = topCandidates.filter { it.second.totalScore in 0.4f..0.6f }
+        val lowScoreNumbers = topCandidates.filter { it.second.totalScore < 0.4f }
+
+        val hotNumbers = highScoreNumbers.take(totalNeeded / 2)
+        val balancedNumbers = mediumScoreNumbers.take(totalNeeded / 3)
+        val coldNumbers = lowScoreNumbers.take(totalNeeded / 6)
+
+        selected.addAll(hotNumbers.map { it.first })
+        selected.addAll(balancedNumbers.map { it.first })
+        selected.addAll(coldNumbers.map { it.first })
+
+        while (selected.size < totalNeeded && selected.size < candidates.size) {
+            val available = candidates.filter { it.first !in selected }
+            if (available.isEmpty()) break
+            selected.add(available.random().first)
+        }
+
+        return selected.toList()
+    }
+
+
+    private fun calculateNumbersNeededForCombinations(baseCount: Int, targetCombinations: Int): Int {
+        if (baseCount <= 0) return 0
+
+        var numbersNeeded = baseCount
+        while (calculateCombinations(numbersNeeded, baseCount) < targetCombinations && numbersNeeded < 20) {
+            numbersNeeded++
+        }
+        return numbersNeeded
+    }
+
+    private fun calculateOptimalNumbersForTarget(
+        redBaseCount: Int,
+        blueBaseCount: Int,
+        targetCombinations: Int
+    ): Pair<Int, Int> {
+        if (targetCombinations <= 0) return Pair(redBaseCount, blueBaseCount)
+        if (redBaseCount <= 0 || blueBaseCount <= 0) return Pair(redBaseCount, blueBaseCount)
+        
+        var bestRed = redBaseCount
+        var bestBlue = blueBaseCount
+        var bestCombinations = calculateCombinations(redBaseCount, redBaseCount) * calculateCombinations(blueBaseCount, blueBaseCount)
+        var bestDifference = kotlin.math.abs(bestCombinations - targetCombinations)
+        
+        if (bestCombinations >= targetCombinations) {
+            return Pair(redBaseCount, blueBaseCount)
+        }
+
+        for (redCount in redBaseCount..15) {
+            for (blueCount in blueBaseCount..5) {
+                val combinations = calculateCombinations(redCount, redBaseCount) * calculateCombinations(blueCount, blueBaseCount)
+                val difference = kotlin.math.abs(combinations - targetCombinations)
+                
+                if (combinations >= targetCombinations) {
+                    if (difference < bestDifference || bestCombinations < targetCombinations) {
+                        bestRed = redCount
+                        bestBlue = blueCount
+                        bestCombinations = combinations
+                        bestDifference = difference
+                    }
+                    break
+                }
+            }
+            if (bestCombinations >= targetCombinations) break
+        }
+        
+        return Pair(bestRed, bestBlue)
+    }
+
+
+    private fun applyComplexOptimization(
+        numbers: List<Int>,
+        range: IntRange,
+        algorithms: Set<PredictionAlgorithm>
+    ): List<Int> {
+        var optimized = numbers.toList()
+
+
+        if (PredictionAlgorithm.SUM_VALUE in algorithms) {
+            optimized = optimizeComplexSumValue(optimized, range)
+        }
+
+
+        if (PredictionAlgorithm.SPAN in algorithms) {
+            optimized = optimizeComplexSpan(optimized, range)
+        }
+
+
+        if (PredictionAlgorithm.AC_VALUE in algorithms) {
+            optimized = optimizeComplexAcValue(optimized, range)
+        }
+
+
+        if (PredictionAlgorithm.ODD_EVEN in algorithms) {
+            optimized = optimizeComplexOddEven(optimized, range)
+        }
+
+
+        if (PredictionAlgorithm.PRIME_COMPOSITE in algorithms) {
+            optimized = optimizeComplexPrimeComposite(optimized, range)
+        }
+
+
+        if (PredictionAlgorithm.ZONE in algorithms) {
+            optimized = optimizeComplexZoneDistribution(optimized, range)
+        }
+
+
+        if (PredictionAlgorithm.BALANCE in algorithms) {
+            optimized = optimizeComplexBalance(optimized, range)
+        }
+
+        return optimized
+    }
+
+
+    private fun optimizeComplexSumValue(numbers: List<Int>, range: IntRange): List<Int> {
+        val sum = numbers.sum()
+        val mid = range.sum() * numbers.size / range.count()
+        val targetRange = (mid * 0.7).toInt()..(mid * 1.3).toInt()
+
+        if (sum in targetRange) return numbers
+
+
+        val mutable = numbers.toMutableList()
+        if (sum < targetRange.first) {
+            val minIdx = mutable.indexOf(mutable.minOrNull())
+            val candidates = range.filter { it !in mutable && it > mutable[minIdx] }
+            if (candidates.isNotEmpty()) {
+                mutable[minIdx] = candidates.random()
+            }
+        } else if (sum > targetRange.last) {
+            val maxIdx = mutable.indexOf(mutable.maxOrNull())
+            val candidates = range.filter { it !in mutable && it < mutable[maxIdx] }
+            if (candidates.isNotEmpty()) {
+                mutable[maxIdx] = candidates.random()
+            }
+        }
+
+        return mutable
+    }
+
+
+    private fun optimizeComplexSpan(numbers: List<Int>, range: IntRange): List<Int> {
+        val span = (numbers.maxOrNull() ?: 0) - (numbers.minOrNull() ?: 0)
+        val targetSpan = 10..30
+
+        if (span in targetSpan) return numbers
+
+        val mutable = numbers.toMutableList()
+        if (span < targetSpan.first) {
+
+            val candidates = range.filter { it !in mutable }
+            if (candidates.isNotEmpty()) {
+                mutable[mutable.size / 2] = candidates.random()
+            }
+        }
+
+        return mutable
+    }
+
+
+    private fun optimizeComplexAcValue(numbers: List<Int>, range: IntRange): List<Int> {
+        val acValue = calculateAcValue(numbers)
+        val targetAc = 5..9
+
+        if (acValue in targetAc) return numbers
+
+
+        val mutable = numbers.toMutableList()
+        val candidates = range.filter { it !in mutable }
+        if (candidates.isNotEmpty() && acValue < targetAc.first) {
+            mutable[Random.nextInt(mutable.size)] = candidates.random()
+        }
+
+        return mutable
+    }
+
+
+    private fun optimizeComplexOddEven(numbers: List<Int>, range: IntRange): List<Int> {
+        val oddCount = numbers.count { it % 2 == 1 }
+        val targetOdd = 1..5
+
+        if (oddCount in targetOdd) return numbers
+
+        val mutable = numbers.toMutableList()
+        if (oddCount < targetOdd.first) {
+
+            val evenIdx = mutable.indexOfFirst { it % 2 == 0 }
+            if (evenIdx >= 0) {
+                val oddCandidates = range.filter { it % 2 == 1 && it !in mutable }
+                if (oddCandidates.isNotEmpty()) {
+                    mutable[evenIdx] = oddCandidates.random()
+                }
+            }
+        } else if (oddCount > targetOdd.last) {
+
+            val oddIdx = mutable.indexOfFirst { it % 2 == 1 }
+            if (oddIdx >= 0) {
+                val evenCandidates = range.filter { it % 2 == 0 && it !in mutable }
+                if (evenCandidates.isNotEmpty()) {
+                    mutable[oddIdx] = evenCandidates.random()
+                }
+            }
+        }
+
+        return mutable
+    }
+
+
+    private fun optimizeComplexPrimeComposite(numbers: List<Int>, range: IntRange): List<Int> {
+        val primeCount = numbers.count { isPrime(it) }
+        val targetPrime = 1..5
+
+        if (primeCount in targetPrime) return numbers
+
+        val mutable = numbers.toMutableList()
+        if (primeCount < targetPrime.first) {
+
+            val compositeIdx = mutable.indexOfFirst { !isPrime(it) }
+            if (compositeIdx >= 0) {
+                val primeCandidates = range.filter { isPrime(it) && it !in mutable }
+                if (primeCandidates.isNotEmpty()) {
+                    mutable[compositeIdx] = primeCandidates.random()
+                }
+            }
+        }
+
+        return mutable
+    }
+
+
+    private fun optimizeComplexZoneDistribution(numbers: List<Int>, range: IntRange): List<Int> {
+        val zoneSize = range.count() / 3
+        val zone1 = range.first until (range.first + zoneSize)
+        val zone2 = (range.first + zoneSize) until (range.first + zoneSize * 2)
+        val zone3 = (range.first + zoneSize * 2)..range.last
+
+        val zone1Count = numbers.count { it in zone1 }
+        val zone2Count = numbers.count { it in zone2 }
+        val zone3Count = numbers.count { it in zone3 }
+
+
+        if (maxOf(zone1Count, zone2Count, zone3Count) - minOf(zone1Count, zone2Count, zone3Count) <= 2) {
+            return numbers
+        }
+
+
+        val mutable = numbers.toMutableList()
+
+        return mutable
+    }
+
+
+    private fun optimizeComplexBalance(numbers: List<Int>, range: IntRange): List<Int> {
+        val mid = (range.first + range.last) / 2
+        val bigCount = numbers.count { it > mid }
+        val oddCount = numbers.count { it % 2 == 1 }
+
+        val targetBig = 1..5
+        val targetOdd = 1..5
+
+        if (bigCount in targetBig && oddCount in targetOdd) return numbers
+
+        val mutable = numbers.toMutableList()
+
+
+        if (bigCount < targetBig.first) {
+            val smallIdx = mutable.indexOfFirst { it <= mid }
+            if (smallIdx >= 0) {
+                val bigCandidates = range.filter { it > mid && it !in mutable }
+                if (bigCandidates.isNotEmpty()) {
+                    mutable[smallIdx] = bigCandidates.random()
+                }
+            }
+        }
+
+        return mutable
+    }
+
+
+    private fun calculateComplexBonus(
+        numbers: List<Int>,
+        range: IntRange,
+        algorithms: Set<PredictionAlgorithm>
+    ): Float {
+        var bonus = 0f
+
+
+        if (PredictionAlgorithm.SUM_VALUE in algorithms) {
+            val sum = numbers.sum()
+            val mid = range.sum() * numbers.size / range.count()
+            val targetRange = (mid * 0.7).toInt()..(mid * 1.3).toInt()
+            if (sum in targetRange) bonus += 0.08f
+        }
+
+
+        if (PredictionAlgorithm.AC_VALUE in algorithms) {
+            val acValue = calculateAcValue(numbers)
+            if (acValue in 5..9) bonus += 0.08f
+        }
+
+
+        if (PredictionAlgorithm.ODD_EVEN in algorithms) {
+            val oddCount = numbers.count { it % 2 == 1 }
+            if (oddCount in 1..5) bonus += 0.05f
+        }
+
+
+        if (PredictionAlgorithm.ZONE in algorithms) {
+            val zoneSize = range.count() / 3
+            val zone1 = range.first until (range.first + zoneSize)
+            val zone2 = (range.first + zoneSize) until (range.first + zoneSize * 2)
+            val zone3 = (range.first + zoneSize * 2)..range.last
+
+            val zone1Count = numbers.count { it in zone1 }
+            val zone2Count = numbers.count { it in zone2 }
+            val zone3Count = numbers.count { it in zone3 }
+
+            if (maxOf(zone1Count, zone2Count, zone3Count) - minOf(zone1Count, zone2Count, zone3Count) <= 2) {
+                bonus += 0.05f
+            }
+        }
+
+        return bonus
+    }
+
+
+    private fun calculateCombinationCount(
+        redNumbers: List<String>,
+        blueNumbers: List<String>,
+        config: LotteryConfig
+    ): Int {
+        val redCount = redNumbers.size
+        val blueCount = blueNumbers.size
+
+        return when {
+            redCount > config.redCount && blueCount > config.blueCount -> {
+                val redCombinations = calculateCombinations(redCount, config.redCount)
+                val blueCombinations = calculateCombinations(blueCount, config.blueCount)
+                redCombinations * blueCombinations
+            }
+            redCount > config.redCount -> calculateCombinations(redCount, config.redCount)
+            blueCount > config.blueCount -> calculateCombinations(blueCount, config.blueCount)
+            else -> 1
+        }
+    }
+
+
+    private fun calculateCombinations(n: Int, r: Int): Int {
+        if (r > n || r < 0) return 0
+        if (r == 0 || r == n) return 1
+
+        var result = 1
+        for (i in 0 until r) {
+            result = result * (n - i) / (i + 1)
+        }
+        return result
+    }
+
+
+    private fun calculateCoverageRate(
+        redNumbers: List<String>,
+        blueNumbers: List<String>,
+        redScores: Map<String, NumberScore>,
+        blueScores: Map<String, NumberScore>
+    ): Float {
+        val totalRedScore = redNumbers.sumOf { (redScores[it]?.totalScore ?: 0f).toDouble() }
+        val totalBlueScore = blueNumbers.sumOf { (blueScores[it]?.totalScore ?: 0f).toDouble() }
+        val maxPossibleScore = (redNumbers.size + blueNumbers.size) * 100f
+
+        return ((totalRedScore + totalBlueScore) / maxPossibleScore).toFloat().coerceIn(0f, 1f)
+    }
+
+
+    private fun identifyHotNumbers(
+        redNumbers: List<String>,
+        redScores: Map<String, NumberScore>
+    ): List<String> {
+        return redNumbers.filter { number ->
+            val score = redScores[number]?.totalScore ?: 0f
+            score > 0.7f
+        }
+    }
+
+
+    private fun identifyColdNumbers(
+        redNumbers: List<String>,
+        redScores: Map<String, NumberScore>
+    ): List<String> {
+        return redNumbers.filter { number ->
+            val score = redScores[number]?.totalScore ?: 0f
+            score < 0.3f
+        }
+    }
+
+
+    private fun generateComplexExplanation(
+        redNumbers: List<String>,
+        blueNumbers: List<String>,
+        redScores: Map<String, NumberScore>,
+        blueScores: Map<String, NumberScore>,
+        algorithms: Set<PredictionAlgorithm>,
+        combinationCount: Int,
+        coverageRate: Float
+    ): String {
+        val parts = mutableListOf<String>()
+
+
+        val hotNumbers = redNumbers.filter { 
+            (redScores[it]?.totalScore ?: 0f) > 0.7f 
+        }
+        if (hotNumbers.isNotEmpty()) {
+            parts.add("热号: ${hotNumbers.joinToString(",")}")
+        }
+
+
+        val coldNumbers = redNumbers.filter {
+            (redScores[it]?.totalScore ?: 0f) < 0.3f
+        }
+        if (coldNumbers.isNotEmpty()) {
+            parts.add("冷号: ${coldNumbers.joinToString(",")}")
+        }
+
+
+        val nums = redNumbers.map { it.toInt() }
+        parts.add("和值=${nums.sum()}")
+        parts.add("跨度=${(nums.maxOrNull()?:0)-(nums.minOrNull()?:0)}")
+
+
+        parts.add("组合数=${combinationCount}")
+        parts.add("覆盖率=${(coverageRate * 100).toInt()}%")
+
+        if (parts.isEmpty()) {
+            parts.add("复式票综合推荐")
+        }
+
+        return parts.joinToString(" | ")
     }
 
 
